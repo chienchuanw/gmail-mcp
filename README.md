@@ -27,6 +27,7 @@ Multi-account Gmail MCP server — read, send, search, and manage email across s
    node dist/index.js auth add personal
    node dist/index.js auth list      # shows alias -> email
    ```
+   Each `auth add` opens Google's consent screen, then redirects back to a local callback at `http://127.0.0.1:3000/oauth2callback` that the command is listening on — so port 3000 must be free while you're authorizing. (You don't need to configure any redirect URI in Google Cloud Console; Google allows any loopback redirect for "Desktop app" clients, and this server uses that port automatically.) Every account you add must also be listed under **Test users** on the consent screen.
 
 4. **Register with Claude Code:**
    ```bash
@@ -52,6 +53,12 @@ Every Gmail tool takes an `account` parameter — the alias you chose in step 3.
 ```
 
 Override the directory with `GMAIL_MCP_CONFIG_DIR`. Tokens auto-refresh; if refresh fails, re-run `gmail-mcp auth add <alias> --force`.
+
+## Troubleshooting
+
+- **`ERR_CONNECTION_REFUSED` / "localhost refused to connect" after authorizing** — the consent screen redirected back but nothing was listening. Make sure port **3000** is free when you run `auth add` (close anything using it, then re-run). You don't need to touch `redirect_uris` in `credentials.json` — the server ignores that field and always uses `http://127.0.0.1:3000/oauth2callback`.
+- **"Access blocked: … has not completed the Google verification process"** — add the account's email under **Test users** on the OAuth consent screen, or, if it's already there, click *Advanced → Go to … (unsafe)* to proceed (expected while the app is in "Testing").
+- **`gmail-mcp auth add` hangs** — you closed the browser tab without finishing. Press Ctrl-C and run it again.
 
 ## Development
 

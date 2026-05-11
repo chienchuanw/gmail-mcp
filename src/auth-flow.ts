@@ -2,7 +2,7 @@ import * as http from "http";
 import { URL } from "url";
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
-import { GMAIL_SCOPES } from "./oauth.js";
+import { GMAIL_SCOPES, OAUTH_CALLBACK_PORT } from "./oauth.js";
 import type { TokenData } from "./accounts.js";
 
 export function buildAuthUrl(client: OAuth2Client): string {
@@ -22,7 +22,7 @@ export async function fetchAccountEmail(client: OAuth2Client): Promise<string> {
 }
 
 /** Start a one-shot HTTP server on `port` and resolve with the OAuth `code` from /oauth2callback. */
-export function waitForAuthCode(port = 3000): Promise<string> {
+export function waitForAuthCode(port = OAUTH_CALLBACK_PORT): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "", `http://127.0.0.1:${port}`);
@@ -54,7 +54,7 @@ export async function runInteractiveAuth(
   client: OAuth2Client,
   opts?: { openBrowser?: (url: string) => void; port?: number },
 ): Promise<{ email: string; token: TokenData }> {
-  const port = opts?.port ?? 3000;
+  const port = opts?.port ?? OAUTH_CALLBACK_PORT;
   const authUrl = buildAuthUrl(client);
   const openBrowser =
     opts?.openBrowser ??

@@ -12,6 +12,19 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.labels",
 ];
 
+/** Port the interactive auth flow's local callback server listens on. */
+export const OAUTH_CALLBACK_PORT = 3000;
+
+/**
+ * Redirect URI used for the interactive auth flow. We always use a loopback
+ * address with this port and path because that is exactly what the local
+ * callback server (see auth-flow.ts) listens on. We deliberately ignore the
+ * `redirect_uris` in credentials.json — a downloaded "Desktop app" client lists
+ * `http://localhost` (port 80, no path), which would never reach our server.
+ * Google permits any loopback redirect for Desktop clients, so this works.
+ */
+export const OAUTH_REDIRECT_URI = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}/oauth2callback`;
+
 export interface OAuthClientConfig {
   client_id: string;
   client_secret: string;
@@ -31,11 +44,7 @@ export function loadOAuthCredentials(credentialsPath: string = getCredentialsPat
 export function createOAuth2Client(creds: OAuthCredentialsFile): OAuth2Client {
   const cfg = creds.installed ?? creds.web;
   if (!cfg) throw new Error("Invalid credentials.json: expected an 'installed' or 'web' key");
-  return new google.auth.OAuth2(
-    cfg.client_id,
-    cfg.client_secret,
-    cfg.redirect_uris?.[0] ?? "http://localhost:3000/oauth2callback",
-  );
+  return new google.auth.OAuth2(cfg.client_id, cfg.client_secret, OAUTH_REDIRECT_URI);
 }
 
 /** If the client's token has expired, refresh it and invoke onRefresh with the new token. */

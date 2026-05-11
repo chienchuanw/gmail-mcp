@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { google } from "googleapis";
-import { loadOAuthCredentials, createOAuth2Client, refreshIfExpired, GMAIL_SCOPES } from "./oauth.js";
+import { loadOAuthCredentials, createOAuth2Client, refreshIfExpired, GMAIL_SCOPES, OAUTH_REDIRECT_URI } from "./oauth.js";
 
 describe("loadOAuthCredentials", () => {
   let dir: string;
@@ -42,6 +42,13 @@ describe("createOAuth2Client", () => {
 
   it("throws for an invalid shape", () => {
     expect(() => createOAuth2Client({} as never)).toThrow(/credentials\.json/i);
+  });
+
+  it("uses the loopback callback redirect URI, ignoring whatever credentials.json lists", () => {
+    expect(OAUTH_REDIRECT_URI).toBe("http://127.0.0.1:3000/oauth2callback");
+    // A downloaded "Desktop app" client lists "http://localhost" (port 80) — must NOT be used.
+    const c = createOAuth2Client({ installed: { client_id: "id", client_secret: "sec", redirect_uris: ["http://localhost"] } });
+    expect(c.generateAuthUrl()).toContain(`redirect_uri=${encodeURIComponent(OAUTH_REDIRECT_URI)}`);
   });
 });
 
