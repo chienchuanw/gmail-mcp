@@ -60,3 +60,7 @@ npm test           # vitest
 npm run build      # tsc -> dist/
 npm run typecheck  # tsc --noEmit
 ```
+
+## Packaging (MCPB)
+
+`bash scripts/build-mcpb.sh` produces `build/gmail-mcp.mcpb` — a self-contained bundle (server code + Node deps) installable by dragging it onto Claude Desktop. The bundle runs the server in stdio mode; OAuth setup (`credentials.json` + `gmail-mcp auth add <alias>`) must still be done from a terminal as described above. The bundle's `config_dir` setting maps to `GMAIL_MCP_CONFIG_DIR`.
