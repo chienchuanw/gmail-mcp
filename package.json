@@ -1,0 +1,29 @@
+{
+  "name": "gmail-mcp",
+  "version": "0.1.0",
+  "description": "Multi-account Gmail MCP server — read, send, search and manage email across several Gmail accounts.",
+  "type": "module",
+  "bin": { "gmail-mcp": "dist/index.js" },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "auth": "node dist/index.js auth",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "googleapis": "^144.0.0",
+    "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": { "node": ">=18.0.0" }
+}
