@@ -2,6 +2,7 @@
   "name": "gmail-mcp",
   "version": "0.1.0",
   "description": "Multi-account Gmail MCP server — read, send, search and manage email across several Gmail accounts.",
+  "license": "MIT",
   "type": "module",
   "bin": { "gmail-mcp": "dist/index.js" },
   "files": ["dist", "README.md"],
