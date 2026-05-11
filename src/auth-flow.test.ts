@@ -44,6 +44,7 @@ describe("waitForAuthCode", () => {
   it("rejects when the callback arrives without a code", async () => {
     const port = 39518;
     const pending = waitForAuthCode(port);
+    pending.catch(() => {}); // attach a handler now so Node doesn't flag a transient unhandled rejection before `expect` below
     await new Promise((r) => setTimeout(r, 50));
     await new Promise<void>((resolve) => {
       http.get(`http://127.0.0.1:${port}/oauth2callback?error=access_denied`, (res) => {
