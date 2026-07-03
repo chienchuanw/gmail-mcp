@@ -42,14 +42,23 @@ Every Gmail tool takes an `account` parameter — the alias you chose in step 3.
 
 `gmail_list_accounts`, plus per-account: `gmail_search`, `gmail_get_message`, `gmail_send`, `gmail_get_thread`, `gmail_get_profile`, `gmail_create_draft`, `gmail_list_drafts`, `gmail_send_draft`, `gmail_delete_draft`, `gmail_list_labels`, `gmail_create_label`, `gmail_delete_label`, `gmail_modify_labels`, `gmail_trash`, `gmail_untrash`, `gmail_mark_read`, `gmail_mark_unread`, `gmail_list_attachments`, `gmail_get_attachment`.
 
+### Token-efficient by design
+
+Responses are kept small so they don't burn through the model's context window:
+
+- **Batch mutations.** `gmail_modify_labels`, `gmail_trash`, `gmail_untrash`, `gmail_mark_read`, and `gmail_mark_unread` take a `messageIds` array and apply the change to every message in a single Gmail `batchModify` request (chunked at 1000). A single `messageId` string is still accepted.
+- **Compact reads.** `gmail_get_message` returns a plain-text body truncated to ~1000 characters (pass `full: true` for the whole thing); HTML mail is stripped to text. `gmail_get_thread` returns a compact per-message shape (`full: true` for the raw thread). `gmail_search` fetches only metadata, not bodies.
+- **Attachments to disk.** `gmail_get_attachment` writes the file under `~/.gmail-mcp/attachments/` and returns `{ filename, mimeType, path, bytes }` instead of inlining base64.
+
 ## Storage
 
 ```
 ~/.gmail-mcp/
 ├── credentials.json      # your shared Google OAuth client (never commit)
-└── accounts/
-    ├── work.json         # { alias, email, token }  (never commit)
-    └── personal.json
+├── accounts/
+│   ├── work.json         # { alias, email, token }  (never commit)
+│   └── personal.json
+└── attachments/          # files saved by gmail_get_attachment
 ```
 
 Override the directory with `GMAIL_MCP_CONFIG_DIR`. Tokens auto-refresh; if refresh fails, re-run `gmail-mcp auth add <alias> --force`.
