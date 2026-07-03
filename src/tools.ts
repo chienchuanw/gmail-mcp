@@ -38,6 +38,7 @@ function gmailTool(
 
 const STR = (description: string): JsonSchemaProperty => ({ type: "string", description });
 const NUM = (description: string): JsonSchemaProperty => ({ type: "number", description });
+const BOOL = (description: string): JsonSchemaProperty => ({ type: "boolean", description });
 const STR_ARRAY = (description: string): JsonSchemaProperty => ({ type: "array", items: { type: "string" }, description });
 
 export const tools: ToolDefinition[] = [
@@ -50,8 +51,9 @@ export const tools: ToolDefinition[] = [
     query: STR("Gmail search query"),
     maxResults: NUM("Maximum number of results (default 10)"),
   }, ["query"]),
-  gmailTool("gmail_get_message", "Get the full content of an email by its message ID.", {
+  gmailTool("gmail_get_message", "Get an email's content by ID. The body is plain text, truncated to ~1000 chars; pass full=true for the whole body.", {
     messageId: STR("The message ID"),
+    full: BOOL("Return the entire body instead of a truncated one (default false)"),
   }, ["messageId"]),
   gmailTool("gmail_send", "Send an email.", {
     to: STR("Recipient email address"),
@@ -61,8 +63,9 @@ export const tools: ToolDefinition[] = [
     bcc: STR("BCC recipients (comma-separated)"),
     threadId: STR("Thread ID to reply within (for threading)"),
   }, ["to", "subject", "body"]),
-  gmailTool("gmail_get_thread", "Get all messages in an email thread.", {
+  gmailTool("gmail_get_thread", "Get a thread's messages in a compact form (plain-text, truncated bodies). Pass full=true for the raw thread.", {
     threadId: STR("The thread ID"),
+    full: BOOL("Return the raw Gmail thread object instead of the compact shape (default false)"),
   }, ["threadId"]),
   gmailTool("gmail_get_profile", "Get the account's Gmail profile (email address, message totals, etc.).", {}, []),
   gmailTool("gmail_create_draft", "Create a draft email.", {
@@ -89,28 +92,30 @@ export const tools: ToolDefinition[] = [
   gmailTool("gmail_delete_label", "Delete a label.", {
     labelId: STR("The ID of the label to delete"),
   }, ["labelId"]),
-  gmailTool("gmail_modify_labels", "Add or remove labels from an email.", {
-    messageId: STR("The message ID"),
+  gmailTool("gmail_modify_labels", "Add and/or remove labels across one or many messages in a single call.", {
+    messageIds: STR_ARRAY("Message IDs to modify (batched in one request)"),
     addLabels: STR_ARRAY("Label IDs to add"),
     removeLabels: STR_ARRAY("Label IDs to remove"),
-  }, ["messageId"]),
-  gmailTool("gmail_trash", "Move an email to trash.", {
-    messageId: STR("The ID of the email to trash"),
-  }, ["messageId"]),
-  gmailTool("gmail_untrash", "Restore an email from trash.", {
-    messageId: STR("The ID of the email to untrash"),
-  }, ["messageId"]),
-  gmailTool("gmail_mark_read", "Mark an email as read.", {
-    messageId: STR("The ID of the email to mark as read"),
-  }, ["messageId"]),
-  gmailTool("gmail_mark_unread", "Mark an email as unread.", {
-    messageId: STR("The ID of the email to mark as unread"),
-  }, ["messageId"]),
+  }, ["messageIds"]),
+  gmailTool("gmail_trash", "Move one or many emails to trash in a single call.", {
+    messageIds: STR_ARRAY("Message IDs to trash (batched in one request)"),
+  }, ["messageIds"]),
+  gmailTool("gmail_untrash", "Restore one or many emails from trash in a single call.", {
+    messageIds: STR_ARRAY("Message IDs to untrash (batched in one request)"),
+  }, ["messageIds"]),
+  gmailTool("gmail_mark_read", "Mark one or many emails as read in a single call.", {
+    messageIds: STR_ARRAY("Message IDs to mark as read (batched in one request)"),
+  }, ["messageIds"]),
+  gmailTool("gmail_mark_unread", "Mark one or many emails as unread in a single call.", {
+    messageIds: STR_ARRAY("Message IDs to mark as unread (batched in one request)"),
+  }, ["messageIds"]),
   gmailTool("gmail_list_attachments", "List all attachments in an email.", {
     messageId: STR("The message ID"),
   }, ["messageId"]),
-  gmailTool("gmail_get_attachment", "Download an attachment from an email (returns base64-encoded data).", {
+  gmailTool("gmail_get_attachment", "Download an attachment to disk and return its file path (data is never inlined).", {
     messageId: STR("The message ID"),
     attachmentId: STR("The attachment ID (from gmail_list_attachments)"),
+    filename: STR("Suggested filename (from gmail_list_attachments); defaults to <attachmentId>.bin"),
+    mimeType: STR("MIME type (from gmail_list_attachments); defaults to application/octet-stream"),
   }, ["messageId", "attachmentId"]),
 ];
