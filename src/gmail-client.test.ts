@@ -42,11 +42,11 @@ function fakeGmail(overrides: Record<string, unknown> = {}): { gmail: gmail_v1.G
         delete: rec("drafts.delete", {}),
       },
       labels: {
-        list: rec("labels.list", { labels: [{ id: "Label_1", name: "Work" }] }),
+        list: rec("labels.list", overrides["labels.list"] ?? { labels: [{ id: "Label_1", name: "Work" }] }),
         create: rec("labels.create", { id: "Label_2", name: "New" }),
         delete: rec("labels.delete", {}),
       },
-      threads: { get: rec("threads.get", { id: "t1", messages: [{ id: "m1" }] }) },
+      threads: { get: rec("threads.get", overrides["threads.get"] ?? { id: "t1", messages: [{ id: "m1" }] }) },
       getProfile: rec("getProfile", { emailAddress: "me@x.com", messagesTotal: 42 }),
     },
   };
@@ -71,11 +71,27 @@ describe("GmailClient", () => {
     });
   });
 
-  it("searchEmails lists then summarizes each message", async () => {
+  it("searchEmails lists then summarizes each message using a metadata fetch (no body)", async () => {
     const { gmail, calls } = fakeGmail();
     const out = await new GmailClient(gmail).searchEmails("is:unread", 5);
     expect(calls["messages.list"]).toMatchObject({ userId: "me", q: "is:unread", maxResults: 5 });
+    expect(calls["messages.get"]).toMatchObject({ userId: "me", id: "m1", format: "metadata" });
     expect(out).toEqual([{ id: "m1", threadId: "t1", subject: "Hello", from: "a@b.com", date: "Mon, 1 Jan 2024", snippet: "snip" }]);
+  });
+
+  it("getMessageContent truncates a long body to 1000 chars by default and returns it whole with full", async () => {
+    const long = "x".repeat(1500);
+    const { gmail } = fakeGmail({
+      "messages.get": {
+        id: "m1", threadId: "t1", snippet: "s", labelIds: [],
+        payload: { headers: [], body: { data: Buffer.from(long).toString("base64url") } },
+      },
+    });
+    const c = new GmailClient(gmail);
+    const truncated = await c.getMessageContent("m1");
+    expect(truncated.body).toBe(`${"x".repeat(1000)}…[truncated, 1500 chars total]`);
+    const full = await c.getMessageContent("m1", { full: true });
+    expect(full.body).toBe(long);
   });
 
   it("sendEmail builds a raw message and posts it with the threadId", async () => {
@@ -140,10 +156,16 @@ describe("GmailClient", () => {
     expect(calls["messages.modify"].requestBody).toMatchObject({ addLabelIds: ["UNREAD"] });
   });
 
-  it("listLabels, createLabel, deleteLabel", async () => {
+  it("listLabels returns only id, name and type", async () => {
+    const { gmail } = fakeGmail({
+      "labels.list": { labels: [{ id: "L1", name: "Work", type: "user", color: { textColor: "#fff" }, messagesTotal: 12 }] },
+    });
+    expect(await new GmailClient(gmail).listLabels()).toEqual([{ id: "L1", name: "Work", type: "user" }]);
+  });
+
+  it("createLabel and deleteLabel", async () => {
     const { gmail, calls } = fakeGmail();
     const c = new GmailClient(gmail);
-    expect(await c.listLabels()).toEqual([{ id: "Label_1", name: "Work" }]);
     const created = await c.createLabel("New");
     expect(calls["labels.create"]).toMatchObject({
       userId: "me",
@@ -154,10 +176,38 @@ describe("GmailClient", () => {
     expect(calls["labels.delete"]).toMatchObject({ userId: "me", id: "Label_2" });
   });
 
-  it("getThread returns the thread", async () => {
-    const { gmail, calls } = fakeGmail();
-    expect(await new GmailClient(gmail).getThread("t1")).toEqual({ id: "t1", messages: [{ id: "m1" }] });
+  it("getThread returns a compact per-message shape by default", async () => {
+    const { gmail, calls } = fakeGmail({
+      "threads.get": {
+        id: "t1", historyId: "h9",
+        messages: [
+          {
+            id: "m1", labelIds: ["INBOX"], snippet: "hi",
+            payload: {
+              headers: [
+                { name: "Subject", value: "Re: hi" },
+                { name: "From", value: "a@b.com" },
+                { name: "To", value: "me@x.com" },
+                { name: "Date", value: "Mon" },
+              ],
+              body: { data: Buffer.from("thread body").toString("base64url") },
+            },
+          },
+        ],
+      },
+    });
+    const out = await new GmailClient(gmail).getThread("t1");
     expect(calls["threads.get"]).toMatchObject({ userId: "me", id: "t1" });
+    expect(out).toEqual({
+      id: "t1",
+      historyId: "h9",
+      messages: [{ id: "m1", from: "a@b.com", to: "me@x.com", date: "Mon", subject: "Re: hi", snippet: "hi", body: "thread body", labels: ["INBOX"] }],
+    });
+  });
+
+  it("getThread returns the raw API object with full:true", async () => {
+    const { gmail } = fakeGmail();
+    expect(await new GmailClient(gmail).getThread("t1", { full: true })).toEqual({ id: "t1", messages: [{ id: "m1" }] });
   });
 
   it("getProfile returns the profile", async () => {

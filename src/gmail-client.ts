@@ -1,5 +1,8 @@
 import type { gmail_v1 } from "googleapis";
-import { buildRawMessage, parseMessageBody, type MessageAttachment } from "./mime.js";
+import { buildRawMessage, parseMessageBody, truncate, type MessageAttachment } from "./mime.js";
+
+/** Default cap on returned message bodies; callers pass `{ full: true }` to bypass. */
+export const BODY_CHAR_LIMIT = 1000;
 
 export interface EmailSummary {
   id: string;
@@ -32,6 +35,34 @@ export interface AttachmentInfo {
   attachmentId: string;
 }
 
+export interface LabelSummary {
+  id: string;
+  name: string;
+  type?: string;
+}
+
+export interface ThreadMessage {
+  id: string;
+  from: string;
+  to: string;
+  date: string;
+  subject: string;
+  snippet: string;
+  body: string;
+  labels: string[];
+}
+
+export interface CompactThread {
+  id: string;
+  historyId: string;
+  messages: ThreadMessage[];
+}
+
+export interface ReadOptions {
+  /** Return the full body instead of a truncated one (get_message / get_thread). */
+  full?: boolean;
+}
+
 export class GmailClient {
   constructor(private readonly gmail: gmail_v1.Gmail) {}
 
@@ -39,10 +70,9 @@ export class GmailClient {
     return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
   }
 
-  async getMessageContent(messageId: string): Promise<EmailContent> {
-    const res = await this.gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
-    const msg = res.data;
+  private extractContent(msg: gmail_v1.Schema$Message, full: boolean): EmailContent {
     const headers = msg.payload?.headers ?? undefined;
+    const body = parseMessageBody(msg.payload ?? undefined);
     return {
       id: msg.id ?? "",
       threadId: msg.threadId ?? "",
@@ -50,10 +80,15 @@ export class GmailClient {
       from: this.headerValue(headers, "From"),
       to: this.headerValue(headers, "To"),
       date: this.headerValue(headers, "Date"),
-      body: parseMessageBody(msg.payload ?? undefined),
+      body: full ? body : truncate(body, BODY_CHAR_LIMIT),
       snippet: msg.snippet ?? "",
       labels: msg.labelIds ?? [],
     };
+  }
+
+  async getMessageContent(messageId: string, opts: ReadOptions = {}): Promise<EmailContent> {
+    const res = await this.gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
+    return this.extractContent(res.data, opts.full ?? false);
   }
 
   async searchEmails(query: string, maxResults = 10): Promise<EmailSummary[]> {
@@ -61,8 +96,22 @@ export class GmailClient {
     const out: EmailSummary[] = [];
     for (const m of res.data.messages ?? []) {
       if (!m.id) continue;
-      const c = await this.getMessageContent(m.id);
-      out.push({ id: c.id, threadId: c.threadId, subject: c.subject, from: c.from, date: c.date, snippet: c.snippet });
+      const r = await this.gmail.users.messages.get({
+        userId: "me",
+        id: m.id,
+        format: "metadata",
+        metadataHeaders: ["Subject", "From", "Date"],
+      });
+      const msg = r.data;
+      const headers = msg.payload?.headers ?? undefined;
+      out.push({
+        id: msg.id ?? "",
+        threadId: msg.threadId ?? "",
+        subject: this.headerValue(headers, "Subject"),
+        from: this.headerValue(headers, "From"),
+        date: this.headerValue(headers, "Date"),
+        snippet: msg.snippet ?? "",
+      });
     }
     return out;
   }
@@ -116,9 +165,9 @@ export class GmailClient {
     return this.modifyLabels(messageId, ["UNREAD"], undefined);
   }
 
-  async listLabels(): Promise<gmail_v1.Schema$Label[]> {
+  async listLabels(): Promise<LabelSummary[]> {
     const res = await this.gmail.users.labels.list({ userId: "me" });
-    return res.data.labels ?? [];
+    return (res.data.labels ?? []).map((l) => ({ id: l.id ?? "", name: l.name ?? "", type: l.type ?? undefined }));
   }
 
   async createLabel(name: string): Promise<gmail_v1.Schema$Label> {
@@ -133,9 +182,18 @@ export class GmailClient {
     await this.gmail.users.labels.delete({ userId: "me", id: labelId });
   }
 
-  async getThread(threadId: string): Promise<gmail_v1.Schema$Thread> {
+  async getThread(threadId: string, opts: ReadOptions = {}): Promise<gmail_v1.Schema$Thread | CompactThread> {
     const res = await this.gmail.users.threads.get({ userId: "me", id: threadId });
-    return res.data;
+    if (opts.full) return res.data;
+    const t = res.data;
+    return {
+      id: t.id ?? "",
+      historyId: t.historyId ?? "",
+      messages: (t.messages ?? []).map((m) => {
+        const c = this.extractContent(m, false);
+        return { id: c.id, from: c.from, to: c.to, date: c.date, subject: c.subject, snippet: c.snippet, body: c.body, labels: c.labels };
+      }),
+    };
   }
 
   async getProfile(): Promise<gmail_v1.Schema$Profile> {
