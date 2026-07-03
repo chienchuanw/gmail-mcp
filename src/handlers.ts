@@ -2,6 +2,8 @@ import { tools } from "./tools.js";
 import type { AccountStore } from "./accounts.js";
 import type { ClientRegistry } from "./client-registry.js";
 import type { GmailClient, SendOptions } from "./gmail-client.js";
+import { getConfigDir } from "./config.js";
+import { writeAttachment } from "./attachments.js";
 
 export interface ToolDeps {
   store: AccountStore;
@@ -95,7 +97,14 @@ async function dispatch(client: GmailClient, name: string, args: Record<string, 
       return json(await client.listAttachments(args.messageId));
     case "gmail_get_attachment": {
       const data = await client.getAttachment(args.messageId, args.attachmentId);
-      return json({ messageId: args.messageId, attachmentId: args.attachmentId, data });
+      const written = writeAttachment(getConfigDir(), {
+        messageId: args.messageId,
+        attachmentId: args.attachmentId,
+        base64: data,
+        filename: args.filename,
+        mimeType: args.mimeType,
+      });
+      return json(written);
     }
     default:
       throw new Error(`Unknown tool: ${name}`);

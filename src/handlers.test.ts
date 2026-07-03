@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { handleCallTool, handleListTools } from "./handlers.js";
 import type { AccountStore } from "./accounts.js";
 import type { ClientRegistry } from "./client-registry.js";
@@ -43,6 +46,12 @@ describe("handleListTools", () => {
 });
 
 describe("handleCallTool", () => {
+  const tmpDirs: string[] = [];
+  afterEach(() => {
+    delete process.env.GMAIL_MCP_CONFIG_DIR;
+    for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
   it("gmail_list_accounts returns the store list without calling the registry", async () => {
     const store = makeStore();
     const registry = makeRegistry(makeClient());
@@ -136,14 +145,21 @@ describe("handleCallTool", () => {
     expect(res.content[0].text).toMatch(/messageIds/);
   });
 
-  it("gmail_get_attachment returns the base64 data embedded in JSON", async () => {
+  it("gmail_get_attachment writes the file to disk and returns a path, never base64", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gmailmcp-h-"));
+    tmpDirs.push(dir);
+    process.env.GMAIL_MCP_CONFIG_DIR = dir;
     const client = makeClient();
     const res = await handleCallTool(
       "gmail_get_attachment",
-      { account: "work", messageId: "m1", attachmentId: "att1" },
+      { account: "work", messageId: "m1", attachmentId: "att1", filename: "report.pdf", mimeType: "application/pdf" },
       { store: makeStore(), registry: makeRegistry(client) },
     );
-    expect(JSON.parse(res.content[0].text)).toMatchObject({ messageId: "m1", attachmentId: "att1", data: "QkFTRTY0" });
+    const out = JSON.parse(res.content[0].text);
+    expect(out).toMatchObject({ filename: "report.pdf", mimeType: "application/pdf" });
+    expect(out.path).toContain(path.join(dir, "attachments"));
+    expect(out.data).toBeUndefined();
+    expect(fs.existsSync(out.path)).toBe(true);
   });
 
   it("gmail_get_message forwards the full flag to the client", async () => {
