@@ -34,7 +34,7 @@ export function writeAttachment(configDir: string, input: WriteAttachmentInput):
   const filename = sanitizeFilename(input.filename ?? `${input.attachmentId}.bin`);
   const mimeType = input.mimeType ?? "application/octet-stream";
   const buf = Buffer.from(input.base64, "base64url");
-  const target = path.join(dir, `${input.messageId}-${filename}`);
+  const target = path.join(dir, `${sanitizeFilename(input.messageId)}-${filename}`);
   fs.writeFileSync(target, buf);
 
   return { filename, mimeType, path: target, bytes: buf.length };
