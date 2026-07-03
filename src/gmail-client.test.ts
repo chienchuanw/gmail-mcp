@@ -33,6 +33,7 @@ function fakeGmail(overrides: Record<string, unknown> = {}): { gmail: gmail_v1.G
         trash: rec("messages.trash", { id: "m1", labelIds: ["TRASH"] }),
         untrash: rec("messages.untrash", { id: "m1", labelIds: ["INBOX"] }),
         modify: rec("messages.modify", { id: "m1", labelIds: [] }),
+        batchModify: rec("messages.batchModify", {}),
         attachments: { get: rec("attachments.get", { data: "QkFTRTY0" }) },
       },
       drafts: {
@@ -132,28 +133,35 @@ describe("GmailClient", () => {
     expect(calls["drafts.delete"]).toMatchObject({ userId: "me", id: "d1" });
   });
 
-  it("trashMessage and untrashMessage call the right endpoints", async () => {
+  it("trashMessages and untrashMessages batch-modify the TRASH label", async () => {
     const { gmail, calls } = fakeGmail();
     const c = new GmailClient(gmail);
-    await c.trashMessage("m1");
-    expect(calls["messages.trash"]).toMatchObject({ userId: "me", id: "m1" });
-    await c.untrashMessage("m1");
-    expect(calls["messages.untrash"]).toMatchObject({ userId: "me", id: "m1" });
+    await c.trashMessages(["m1", "m2"]);
+    expect(calls["messages.batchModify"]).toMatchObject({ userId: "me", requestBody: { ids: ["m1", "m2"], addLabelIds: ["TRASH"] } });
+    await c.untrashMessages(["m1", "m2"]);
+    expect(calls["messages.batchModify"]).toMatchObject({ userId: "me", requestBody: { ids: ["m1", "m2"], removeLabelIds: ["TRASH"] } });
   });
 
-  it("modifyLabels passes add/remove arrays", async () => {
+  it("modifyLabels batch-modifies add/remove across many ids", async () => {
     const { gmail, calls } = fakeGmail();
-    await new GmailClient(gmail).modifyLabels("m1", ["A"], ["B"]);
-    expect(calls["messages.modify"]).toMatchObject({ userId: "me", id: "m1", requestBody: { addLabelIds: ["A"], removeLabelIds: ["B"] } });
+    await new GmailClient(gmail).modifyLabels(["m1", "m2", "m3"], ["A"], ["B"]);
+    expect(calls["messages.batchModify"]).toMatchObject({ userId: "me", requestBody: { ids: ["m1", "m2", "m3"], addLabelIds: ["A"], removeLabelIds: ["B"] } });
   });
 
-  it("markAsRead removes UNREAD; markAsUnread adds UNREAD", async () => {
+  it("markAsRead removes UNREAD; markAsUnread adds UNREAD (batched)", async () => {
     const { gmail, calls } = fakeGmail();
     const c = new GmailClient(gmail);
-    await c.markAsRead("m1");
-    expect(calls["messages.modify"].requestBody).toMatchObject({ removeLabelIds: ["UNREAD"] });
-    await c.markAsUnread("m1");
-    expect(calls["messages.modify"].requestBody).toMatchObject({ addLabelIds: ["UNREAD"] });
+    await c.markAsRead(["m1", "m2"]);
+    expect(calls["messages.batchModify"].requestBody).toMatchObject({ ids: ["m1", "m2"], removeLabelIds: ["UNREAD"] });
+    await c.markAsUnread(["m1", "m2"]);
+    expect(calls["messages.batchModify"].requestBody).toMatchObject({ ids: ["m1", "m2"], addLabelIds: ["UNREAD"] });
+  });
+
+  it("modifyLabels chunks more than 1000 ids into separate batchModify calls", async () => {
+    const { gmail } = fakeGmail();
+    const ids = Array.from({ length: 2500 }, (_, i) => `m${i}`);
+    await new GmailClient(gmail).modifyLabels(ids, ["A"]);
+    expect((gmail as any).users.messages.batchModify.mock.calls.length).toBe(3);
   });
 
   it("listLabels returns only id, name and type", async () => {

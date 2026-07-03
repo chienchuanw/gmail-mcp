@@ -7,21 +7,21 @@ const makeStore = () => ({ list: vi.fn(() => [{ alias: "work", email: "w@x.com" 
 
 const makeClient = () => ({
   searchEmails: vi.fn(async () => [{ id: "m1", threadId: "t", subject: "S", from: "f", date: "d", snippet: "x" }]),
-  getMessageContent: vi.fn(async (id: string) => ({ id, subject: "S" })),
+  getMessageContent: vi.fn(async (id: string, _opts?: unknown) => ({ id, subject: "S" })),
   sendEmail: vi.fn(async () => ({ id: "sent1" })),
   createDraft: vi.fn(async () => ({ id: "d1" })),
   listDrafts: vi.fn(async () => [{ id: "d1" }]),
   sendDraft: vi.fn(async () => ({ id: "s2" })),
   deleteDraft: vi.fn(async () => {}),
-  trashMessage: vi.fn(async () => ({})),
-  untrashMessage: vi.fn(async () => ({})),
-  markAsRead: vi.fn(async () => ({})),
-  markAsUnread: vi.fn(async () => ({})),
-  modifyLabels: vi.fn(async () => ({})),
+  trashMessages: vi.fn(async () => {}),
+  untrashMessages: vi.fn(async () => {}),
+  markAsRead: vi.fn(async () => {}),
+  markAsUnread: vi.fn(async () => {}),
+  modifyLabels: vi.fn(async () => {}),
   listLabels: vi.fn(async () => [{ id: "L1" }]),
   createLabel: vi.fn(async () => ({ id: "L2" })),
   deleteLabel: vi.fn(async () => {}),
-  getThread: vi.fn(async () => ({ id: "t1" })),
+  getThread: vi.fn(async (_id: string, _opts?: unknown) => ({ id: "t1" })),
   listAttachments: vi.fn(async () => [{ filename: "a", mimeType: "m", attachmentId: "x" }]),
   getAttachment: vi.fn(async () => "QkFTRTY0"),
   getProfile: vi.fn(async () => ({ emailAddress: "w@x.com" })),
@@ -84,15 +84,56 @@ describe("handleCallTool", () => {
     expect(res.isError).toBeFalsy();
   });
 
-  it("gmail_mark_read calls markAsRead and confirms", async () => {
+  it("gmail_mark_read accepts messageIds and reports the count", async () => {
     const client = makeClient();
     const res = await handleCallTool(
+      "gmail_mark_read",
+      { account: "work", messageIds: ["m1", "m2"] },
+      { store: makeStore(), registry: makeRegistry(client) },
+    );
+    expect(client.markAsRead).toHaveBeenCalledWith(["m1", "m2"]);
+    expect(JSON.parse(res.content[0].text)).toEqual({ modified: 2 });
+  });
+
+  it("gmail_mark_read normalizes a single messageId string to an array", async () => {
+    const client = makeClient();
+    await handleCallTool(
       "gmail_mark_read",
       { account: "work", messageId: "m1" },
       { store: makeStore(), registry: makeRegistry(client) },
     );
-    expect(client.markAsRead).toHaveBeenCalledWith("m1");
-    expect(res.content[0].text).toMatch(/read/i);
+    expect(client.markAsRead).toHaveBeenCalledWith(["m1"]);
+  });
+
+  it("gmail_modify_labels batches add/remove across messageIds", async () => {
+    const client = makeClient();
+    const res = await handleCallTool(
+      "gmail_modify_labels",
+      { account: "work", messageIds: ["m1", "m2", "m3"], addLabels: ["A"], removeLabels: ["B"] },
+      { store: makeStore(), registry: makeRegistry(client) },
+    );
+    expect(client.modifyLabels).toHaveBeenCalledWith(["m1", "m2", "m3"], ["A"], ["B"]);
+    expect(JSON.parse(res.content[0].text)).toEqual({ modified: 3 });
+  });
+
+  it("gmail_trash routes to trashMessages with the id array", async () => {
+    const client = makeClient();
+    await handleCallTool(
+      "gmail_trash",
+      { account: "work", messageIds: ["m1", "m2"] },
+      { store: makeStore(), registry: makeRegistry(client) },
+    );
+    expect(client.trashMessages).toHaveBeenCalledWith(["m1", "m2"]);
+  });
+
+  it("a mutation with no message ids → isError", async () => {
+    const res = await handleCallTool(
+      "gmail_mark_read",
+      { account: "work" },
+      { store: makeStore(), registry: makeRegistry(makeClient()) },
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/messageIds/);
   });
 
   it("gmail_get_attachment returns the base64 data embedded in JSON", async () => {
@@ -103,6 +144,18 @@ describe("handleCallTool", () => {
       { store: makeStore(), registry: makeRegistry(client) },
     );
     expect(JSON.parse(res.content[0].text)).toMatchObject({ messageId: "m1", attachmentId: "att1", data: "QkFTRTY0" });
+  });
+
+  it("gmail_get_message forwards the full flag to the client", async () => {
+    const client = makeClient();
+    await handleCallTool("gmail_get_message", { account: "work", messageId: "m1", full: true }, { store: makeStore(), registry: makeRegistry(client) });
+    expect(client.getMessageContent).toHaveBeenCalledWith("m1", { full: true });
+  });
+
+  it("gmail_get_thread forwards the full flag to the client", async () => {
+    const client = makeClient();
+    await handleCallTool("gmail_get_thread", { account: "work", threadId: "t1", full: true }, { store: makeStore(), registry: makeRegistry(client) });
+    expect(client.getThread).toHaveBeenCalledWith("t1", { full: true });
   });
 
   it("missing account → isError", async () => {

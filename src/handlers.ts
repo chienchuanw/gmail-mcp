@@ -18,7 +18,16 @@ function text(body: string): ToolResult {
 }
 
 function json(value: unknown): ToolResult {
-  return text(JSON.stringify(value, null, 2));
+  return text(JSON.stringify(value));
+}
+
+/** Accept either a `messageIds` array or a single `messageId` string; require at least one. */
+function messageIds(args: Record<string, any>): string[] {
+  const ids: unknown = args.messageIds ?? (args.messageId != null ? [args.messageId] : []);
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error("Provide messageIds — a non-empty array of message IDs (a single messageId string is also accepted).");
+  }
+  return ids as string[];
 }
 
 async function dispatch(client: GmailClient, name: string, args: Record<string, any>): Promise<ToolResult> {
@@ -26,13 +35,13 @@ async function dispatch(client: GmailClient, name: string, args: Record<string, 
     case "gmail_search":
       return json(await client.searchEmails(args.query, args.maxResults ?? 10));
     case "gmail_get_message":
-      return json(await client.getMessageContent(args.messageId));
+      return json(await client.getMessageContent(args.messageId, { full: args.full === true }));
     case "gmail_send": {
       const r = await client.sendEmail(args as SendOptions);
       return text(`Email sent successfully. Message ID: ${r.id}`);
     }
     case "gmail_get_thread":
-      return json(await client.getThread(args.threadId));
+      return json(await client.getThread(args.threadId, { full: args.full === true }));
     case "gmail_get_profile":
       return json(await client.getProfile());
     case "gmail_create_draft": {
@@ -57,21 +66,31 @@ async function dispatch(client: GmailClient, name: string, args: Record<string, 
     case "gmail_delete_label":
       await client.deleteLabel(args.labelId);
       return text("Label deleted successfully.");
-    case "gmail_modify_labels":
-      await client.modifyLabels(args.messageId, args.addLabels, args.removeLabels);
-      return text("Labels modified successfully.");
-    case "gmail_trash":
-      await client.trashMessage(args.messageId);
-      return text("Email moved to trash.");
-    case "gmail_untrash":
-      await client.untrashMessage(args.messageId);
-      return text("Email removed from trash.");
-    case "gmail_mark_read":
-      await client.markAsRead(args.messageId);
-      return text("Email marked as read.");
-    case "gmail_mark_unread":
-      await client.markAsUnread(args.messageId);
-      return text("Email marked as unread.");
+    case "gmail_modify_labels": {
+      const ids = messageIds(args);
+      await client.modifyLabels(ids, args.addLabels, args.removeLabels);
+      return json({ modified: ids.length });
+    }
+    case "gmail_trash": {
+      const ids = messageIds(args);
+      await client.trashMessages(ids);
+      return json({ modified: ids.length });
+    }
+    case "gmail_untrash": {
+      const ids = messageIds(args);
+      await client.untrashMessages(ids);
+      return json({ modified: ids.length });
+    }
+    case "gmail_mark_read": {
+      const ids = messageIds(args);
+      await client.markAsRead(ids);
+      return json({ modified: ids.length });
+    }
+    case "gmail_mark_unread": {
+      const ids = messageIds(args);
+      await client.markAsUnread(ids);
+      return json({ modified: ids.length });
+    }
     case "gmail_list_attachments":
       return json(await client.listAttachments(args.messageId));
     case "gmail_get_attachment": {

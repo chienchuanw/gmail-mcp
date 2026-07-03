@@ -32,6 +32,23 @@ describe("tools", () => {
     expect(listDrafts.inputSchema.required).toEqual(["account"]);
   });
 
+  it("batch mutation tools take a messageIds array", () => {
+    for (const n of ["gmail_modify_labels", "gmail_mark_read", "gmail_mark_unread", "gmail_trash", "gmail_untrash"]) {
+      const t = tools.find((t) => t.name === n)!;
+      const props = t.inputSchema.properties as Record<string, any>;
+      expect(props.messageIds).toMatchObject({ type: "array", items: { type: "string" } });
+      expect(props.messageId).toBeUndefined();
+      expect(t.inputSchema.required).toEqual(["account", "messageIds"]);
+    }
+  });
+
+  it("get_message and get_thread expose a boolean full flag", () => {
+    for (const n of ["gmail_get_message", "gmail_get_thread"]) {
+      const t = tools.find((t) => t.name === n)!;
+      expect((t.inputSchema.properties as Record<string, any>).full).toMatchObject({ type: "boolean" });
+    }
+  });
+
   it("includes all 19 Gmail tool names", () => {
     const names = new Set(tools.map((t) => t.name));
     for (const n of [

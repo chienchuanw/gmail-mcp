@@ -4,6 +4,9 @@ import { buildRawMessage, parseMessageBody, truncate, type MessageAttachment } f
 /** Default cap on returned message bodies; callers pass `{ full: true }` to bypass. */
 export const BODY_CHAR_LIMIT = 1000;
 
+/** Max message ids per Gmail batchModify request. */
+export const BATCH_MODIFY_LIMIT = 1000;
+
 export interface EmailSummary {
   id: string;
   threadId: string;
@@ -142,27 +145,32 @@ export class GmailClient {
     await this.gmail.users.drafts.delete({ userId: "me", id: draftId });
   }
 
-  async trashMessage(messageId: string): Promise<gmail_v1.Schema$Message> {
-    const res = await this.gmail.users.messages.trash({ userId: "me", id: messageId });
-    return res.data;
+  /** Apply the same label change to many messages in one request per 1000-id chunk. */
+  private async batchModify(ids: string[], addLabelIds?: string[], removeLabelIds?: string[]): Promise<void> {
+    for (let i = 0; i < ids.length; i += BATCH_MODIFY_LIMIT) {
+      const chunk = ids.slice(i, i + BATCH_MODIFY_LIMIT);
+      await this.gmail.users.messages.batchModify({ userId: "me", requestBody: { ids: chunk, addLabelIds, removeLabelIds } });
+    }
   }
 
-  async untrashMessage(messageId: string): Promise<gmail_v1.Schema$Message> {
-    const res = await this.gmail.users.messages.untrash({ userId: "me", id: messageId });
-    return res.data;
+  async modifyLabels(ids: string[], addLabelIds?: string[], removeLabelIds?: string[]): Promise<void> {
+    await this.batchModify(ids, addLabelIds, removeLabelIds);
   }
 
-  async modifyLabels(messageId: string, addLabelIds?: string[], removeLabelIds?: string[]): Promise<gmail_v1.Schema$Message> {
-    const res = await this.gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds, removeLabelIds } });
-    return res.data;
+  async markAsRead(ids: string[]): Promise<void> {
+    await this.batchModify(ids, undefined, ["UNREAD"]);
   }
 
-  async markAsRead(messageId: string): Promise<gmail_v1.Schema$Message> {
-    return this.modifyLabels(messageId, undefined, ["UNREAD"]);
+  async markAsUnread(ids: string[]): Promise<void> {
+    await this.batchModify(ids, ["UNREAD"], undefined);
   }
 
-  async markAsUnread(messageId: string): Promise<gmail_v1.Schema$Message> {
-    return this.modifyLabels(messageId, ["UNREAD"], undefined);
+  async trashMessages(ids: string[]): Promise<void> {
+    await this.batchModify(ids, ["TRASH"], undefined);
+  }
+
+  async untrashMessages(ids: string[]): Promise<void> {
+    await this.batchModify(ids, undefined, ["TRASH"]);
   }
 
   async listLabels(): Promise<LabelSummary[]> {
