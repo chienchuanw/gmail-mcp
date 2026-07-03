@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { encodeBase64Url, decodeBase64Url, buildRawMessage, parseMessageBody } from "./mime.js";
+import { encodeBase64Url, decodeBase64Url, buildRawMessage, parseMessageBody, htmlToText, truncate } from "./mime.js";
 
 describe("base64url", () => {
   it("round-trips a unicode string with +, /, = bytes", () => {
@@ -69,8 +69,37 @@ describe("parseMessageBody", () => {
     ).toBe("the plain part");
   });
 
-  it("falls back to text/html when there is no text/plain part", () => {
-    const html = Buffer.from("<p>only html</p>").toString("base64url");
-    expect(parseMessageBody({ parts: [{ mimeType: "text/html", body: { data: html } }] })).toBe("<p>only html</p>");
+  it("strips tags when it falls back to text/html", () => {
+    const html = Buffer.from("<p>only <b>html</b></p>").toString("base64url");
+    expect(parseMessageBody({ parts: [{ mimeType: "text/html", body: { data: html } }] })).toBe("only html");
+  });
+});
+
+describe("htmlToText", () => {
+  it("removes tags and collapses whitespace", () => {
+    expect(htmlToText("<p>Hello</p>\n<p>  world </p>")).toBe("Hello world");
+  });
+
+  it("drops <script> and <style> blocks entirely", () => {
+    expect(htmlToText("<style>.a{color:red}</style>Hi<script>alert(1)</script> there")).toBe("Hi there");
+  });
+
+  it("decodes common HTML entities", () => {
+    expect(htmlToText("Tom &amp; Jerry &lt;3 &quot;x&quot; &#39;y&#39; &nbsp;z")).toBe('Tom & Jerry <3 "x" \'y\' z');
+  });
+
+  it("turns block boundaries into single spaces, not run-together text", () => {
+    expect(htmlToText("<div>a</div><div>b</div>")).toBe("a b");
+  });
+});
+
+describe("truncate", () => {
+  it("returns the text unchanged when within the limit", () => {
+    expect(truncate("short", 100)).toBe("short");
+  });
+
+  it("cuts to the limit and appends a marker with the total length", () => {
+    const out = truncate("abcdefghij", 4);
+    expect(out).toBe("abcd…[truncated, 10 chars total]");
   });
 });
