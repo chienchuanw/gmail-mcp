@@ -68,7 +68,28 @@ export function buildRawMessage(input: RawMessageInput): string {
   return encodeBase64Url(lines.join("\r\n"));
 }
 
-/** Extract a readable body from a message payload: prefer text/plain, then text/html. */
+/** Strip HTML to readable plain text: drop script/style, remove tags, decode common entities, collapse whitespace. */
+export function htmlToText(html: string): string {
+  const decoded = html
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/gi, "'");
+  return decoded.replace(/\s+/g, " ").trim();
+}
+
+/** Cut text to `limit` characters, appending a marker noting the original length when truncated. */
+export function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}…[truncated, ${text.length} chars total]`;
+}
+
+/** Extract a readable body from a message payload: prefer text/plain, else strip text/html to text. */
 export function parseMessageBody(payload: MessagePart | undefined): string {
   if (!payload) return "";
   if (payload.body?.data) {
@@ -78,7 +99,7 @@ export function parseMessageBody(payload: MessagePart | undefined): string {
     const plain = payload.parts.find((p) => p.mimeType === "text/plain");
     if (plain?.body?.data) return decodeBase64Url(plain.body.data).toString("utf-8");
     const html = payload.parts.find((p) => p.mimeType === "text/html");
-    if (html?.body?.data) return decodeBase64Url(html.body.data).toString("utf-8");
+    if (html?.body?.data) return htmlToText(decodeBase64Url(html.body.data).toString("utf-8"));
   }
   return "";
 }
